@@ -949,3 +949,14 @@
     max-width: 46%;
   }
 }
+
+
+/* Detailed before-and-after values in Recent activity */
+.activity-item{align-items:flex-start}
+.activity-item .activity-content{flex:1;min-width:0}
+.activity-item .activity-details{margin-top:7px;display:flex;flex-direction:column;gap:4px}
+.activity-item .activity-change{display:flex;flex-wrap:wrap;gap:4px;font-size:10px;line-height:1.5;color:#647187}
+.activity-item .activity-change strong{display:inline;font-size:10px;font-weight:700;color:#526075}
+.activity-item .activity-change span{display:inline;font-size:10px;color:#647187;margin:0;overflow-wrap:anywhere}
+.activity-item .activity-by{display:block;font-size:10px;color:#929bab;margin-top:6px}
+.activity-item time{flex-shrink:0;white-space:nowrap}

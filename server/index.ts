@@ -368,6 +368,43 @@ function readData(): AnyRecord {
   return JSON.parse(fs.readFileSync(dataPath, 'utf8'));
 }
 function writeData(data: AnyRecord) { fs.writeFileSync(dataPath, JSON.stringify(data, null, 2)); }
+
+function activityValue(data: AnyRecord, field: string, value: any): string {
+  if (value === undefined || value === null || value === '') return '(empty)';
+  if (field === 'propertyId') {
+    return String(data.properties.find((p: AnyRecord) => p.id === value)?.name || value);
+  }
+  if (field === 'amount') {
+    return new Intl.NumberFormat('en-US').format(Number(value));
+  }
+  return String(value);
+}
+
+function activityChanges(
+  data: AnyRecord,
+  before: AnyRecord | null,
+  after: AnyRecord,
+  fields: Array<{ key: string; label: string }>
+) {
+  return fields
+    .filter(({ key }) => before === null || String(before[key] ?? '') !== String(after[key] ?? ''))
+    .map(({ key, label }) => ({
+      field: label,
+      from: before === null ? '(new)' : activityValue(data, key, before[key]),
+      to: activityValue(data, key, after[key])
+    }));
+}
+
+function addActivity(data: AnyRecord, text: string, details: any[] = []) {
+  data.activity.unshift({
+    id: Date.now() + Math.random(),
+    text,
+    by: 'Demo User',
+    time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+    ...(details.length ? { details } : {})
+  });
+}
+
 function list<T extends AnyRecord>(items: T[], req: express.Request) {
   const q = String(req.query.q || '').toLowerCase();
   const propertyId = String(req.query.property_id || '');
@@ -464,12 +501,17 @@ app.post('/api/v1/reservations', (req, res) => {
   };
 
   d.reservations.unshift(item);
-  d.activity.unshift({
-    id: Date.now(),
-    text: `Reservation ${id} created for ${item.guest}`,
-    by: 'Demo User',
-    time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-  });
+  addActivity(d, `Reservation ${id} created for ${item.guest}`, activityChanges(d, null, item, [
+    { key: 'guest', label: 'Guest' },
+    { key: 'propertyId', label: 'Hotel' },
+    { key: 'room', label: 'Room' },
+    { key: 'checkIn', label: 'Check-in' },
+    { key: 'checkOut', label: 'Check-out' },
+    { key: 'guests', label: 'Guests' },
+    { key: 'status', label: 'Status' },
+    { key: 'source', label: 'Booking source' },
+    { key: 'amount', label: 'Amount' }
+  ]));
   writeData(d);
   res.status(201).json({ data: item });
 });
@@ -478,6 +520,7 @@ app.patch('/api/v1/reservations/:id', (req, res) => {
   const item = d.reservations.find((x: AnyRecord) => x.id === req.params.id);
   if (!item) return res.status(404).json({ error: 'Reservation not found.' });
 
+  const before = { ...item };
   const body = req.body || {};
   const detailFields = [
     'guest', 'propertyId', 'room', 'checkIn', 'checkOut',
@@ -559,29 +602,52 @@ app.patch('/api/v1/reservations/:id', (req, res) => {
 
   Object.assign(item, updated);
 
+  const reservationChanges = activityChanges(d, before, item, [
+    { key: 'guest', label: 'Guest' },
+    { key: 'propertyId', label: 'Hotel' },
+    { key: 'room', label: 'Room' },
+    { key: 'checkIn', label: 'Check-in' },
+    { key: 'checkOut', label: 'Check-out' },
+    { key: 'guests', label: 'Guests' },
+    { key: 'status', label: 'Status' },
+    { key: 'source', label: 'Booking source' },
+    { key: 'amount', label: 'Amount' }
+  ]);
+
+  const automaticRoomChanges: any[] = [];
   if (body.status === 'Checked in' || body.status === 'Checked out') {
     const room = d.rooms.find((r: AnyRecord) =>
       String(r.number) === String(item.room) &&
       r.propertyId === item.propertyId
     );
     if (room) {
+      const roomBefore = { ...room };
       if (body.status === 'Checked in') {
         room.occupancyStatus = 'Occupied';
       } else {
         room.occupancyStatus = 'Vacant';
         room.housekeepingStatus = 'Dirty';
       }
+      automaticRoomChanges.push(...activityChanges(d, roomBefore, room, [
+        { key: 'occupancyStatus', label: 'Occupancy' },
+        { key: 'housekeepingStatus', label: 'Housekeeping' }
+      ]));
+      if (automaticRoomChanges.length) {
+        addActivity(d, `Room ${room.number} updated automatically after reservation ${item.id} was ${body.status.toLowerCase()}`, automaticRoomChanges);
+      }
     }
   }
 
-  d.activity.unshift({
-    id: Date.now(),
-    text: editingDetails
-      ? `Reservation ${item.id} details edited for ${item.guest}`
-      : `Reservation ${item.id} status updated to ${item.status}`,
-    by: 'Demo User',
-    time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-  });
+  if (reservationChanges.length) {
+    const statusChanged = reservationChanges.some(change => change.field === 'Status');
+    addActivity(
+      d,
+      statusChanged
+        ? `Reservation ${item.id} status updated`
+        : `Reservation ${item.id} details edited for ${item.guest}`,
+      reservationChanges
+    );
+  }
 
   writeData(d);
   res.json({ data: item });
@@ -598,15 +664,14 @@ app.delete('/api/v1/reservations/:id', (req, res) => {
 
   const [deleted] = d.reservations.splice(index, 1);
 
-  d.activity.unshift({
-    id: Date.now(),
-    text: `Reservation ${deleted.id} for ${deleted.guest} permanently deleted`,
-    by: 'Demo User',
-    time: new Date().toLocaleTimeString([], {
-      hour: '2-digit',
-      minute: '2-digit'
-    })
-  });
+  addActivity(d, `Reservation ${deleted.id} for ${deleted.guest} permanently deleted`, [
+    { field: 'Guest', from: activityValue(d, 'guest', deleted.guest), to: 'Deleted' },
+    { field: 'Hotel', from: activityValue(d, 'propertyId', deleted.propertyId), to: 'Deleted' },
+    { field: 'Room', from: activityValue(d, 'room', deleted.room), to: 'Deleted' },
+    { field: 'Check-in', from: activityValue(d, 'checkIn', deleted.checkIn), to: 'Deleted' },
+    { field: 'Check-out', from: activityValue(d, 'checkOut', deleted.checkOut), to: 'Deleted' },
+    { field: 'Status', from: activityValue(d, 'status', deleted.status), to: 'Deleted' }
+  ]);
 
   writeData(d);
   res.json({ message: 'Reservation permanently deleted.', data: deleted });
@@ -684,13 +749,21 @@ app.patch('/api/v1/rooms/:id/status', async (req, res) => {
     return res.status(400).json({ error: `Invalid ${field}.` });
   }
 
-  const previousStatus = item.housekeepingStatus;
-  item[field] = value;
-  writeData(d);
+  const previousValue = item[field];
+  const changed = previousValue !== value;
+  if (changed) {
+    item[field] = value;
+    const label = field === 'occupancyStatus' ? 'Occupancy' : 'Housekeeping';
+    addActivity(d, `Room ${item.number} ${label.toLowerCase()} updated`, [
+      { field: label, from: String(previousValue ?? '(empty)'), to: String(value) }
+    ]);
+    writeData(d);
+  }
 
   const isTransitionToClean =
+    changed &&
     field === 'housekeepingStatus' &&
-    previousStatus !== 'Clean' &&
+    previousValue !== 'Clean' &&
     item.housekeepingStatus === 'Clean';
   const pushConfigured = isTransitionToClean ? configureWebPush() : false;
   const subscriptions = isTransitionToClean ? readPushSubscriptions() : [];
@@ -729,8 +802,14 @@ app.patch('/api/v1/rooms/:id/note', (req, res) => {
   if (req.body.note.length > 2000) {
     return res.status(400).json({ error: 'Room notes cannot exceed 2000 characters.' });
   }
-  item.note = req.body.note;
-  writeData(d);
+  const previousNote = String(item.note || '');
+  if (previousNote !== req.body.note) {
+    item.note = req.body.note;
+    addActivity(d, `Room ${item.number} notes updated`, [
+      { field: 'Room notes', from: previousNote || '(empty)', to: req.body.note || '(empty)' }
+    ]);
+    writeData(d);
+  }
   res.json({ data: item });
 });
 

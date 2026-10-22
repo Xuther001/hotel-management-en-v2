@@ -133,7 +133,7 @@ function Dashboard({ property }: { property: string }) {
         <div className="attention-list">{data.tasks.map((task: AnyRow) => <div className="attention-item" key={task.id}><div className={`attention-icon ${task.priority === 'High' ? 'urgent' : ''}`}><AlertTriangle size={16}/></div><div className="attention-text"><strong>{task.title}</strong><span>{task.property} · {task.assignee}</span></div><Badge tone={task.status === 'Overdue' ? 'danger' : 'warning'}>{task.status}</Badge></div>)}</div>
       </Panel>
     </div>
-    <Panel title="Recent activity" subtitle="Latest updates across your business"><div className="activity-list">{data.activity.map((a: AnyRow) => <div className="activity-item" key={a.id}><div className="activity-dot"><CheckCircle2 size={16}/></div><div><strong>{a.text}</strong><span>{a.by}</span></div><time>{a.time}</time></div>)}</div></Panel>
+    <Panel title="Recent activity" subtitle="Latest updates across your business"><div className="activity-list">{data.activity.map((a: AnyRow) => <div className="activity-item" key={a.id}><div className="activity-dot"><CheckCircle2 size={16}/></div><div className="activity-content"><strong>{a.text}</strong>{Array.isArray(a.details) && a.details.length > 0 && <div className="activity-details">{a.details.map((change: AnyRow, index: number) => <div className="activity-change" key={`${a.id}-${index}`}><strong>{change.field}:</strong> <span>{change.from} → {change.to}</span></div>)}</div>}<span className="activity-by">{a.by}</span></div><time>{a.time}</time></div>)}</div></Panel>
   </>;
 }
 function SearchBar({ value, onChange, placeholder = 'Search records...' }: { value: string; onChange: (v:string)=>void; placeholder?: string }) {
