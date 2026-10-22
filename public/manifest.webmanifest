@@ -9,10 +9,10 @@
   "theme_color": "#172b4d",
   "icons": [
     {
-      "src": "/icon.svg",
+      "src": "/AlohaHotel.png",
       "sizes": "any",
-      "type": "image/svg+xml",
-      "purpose": "any maskable"
+      "type": "image/png",
+      "purpose": "any"
     }
   ]
 }
